@@ -15,7 +15,6 @@
 # along with this library. If not, see <https://www.gnu.org/licenses/>.
 
 # 1. backward modeling
-import cupy as cp  # CuPy is imported as cp for compatibility
 import matplotlib.pyplot as plt
 import copy
 import numpy as np       
@@ -24,15 +23,15 @@ plt.style.use('fast')
 class backward_modeling:
     """
     kwargs:
-    observed data:cp.array 観測データ
+    observed data:np.array 観測データ
     nx:int   x方向のグリッド数
     nz:int   z方向のグリッド数
     dx:float x方向のグリッド間隔
     dz:float z方向のグリッド間隔
     nt:int   シミュレーション時間ステップ数
     fs:float サンプリング周波数
-    vs:cp.array S波速度
-    rho:cp.array 密度
+    vs:np.array S波速度
+    rho:np.array 密度
     absorbing_frame:int 吸収境界の幅
     src_loc:list 震源の位置  [[i1,j1],[i2,j2],...]
     receiver_loc:list 受信機の位置 [[i1,j1],[i2,j2],...]
@@ -40,15 +39,15 @@ class backward_modeling:
     isnap:int 途中経過の表示ステップ数 default:10
     order:int 空間微分のオーダー(2 or 3) dedault:2
     ###
-    snap:cp.array 途中経過の波場スナップショット for correlationg
+    snap:np.array 途中経過の波場スナップショット for correlationg
     """
 
-    def show(self, v:cp.array, suptitle):
+    def show(self, v:np.array, suptitle):
         """
-        v:cp.array 途中経過の波場スナップショット
+        v:np.array 途中経過の波場スナップショット
         """
-        v = v.get()
-        mvmax = cp.max(v)
+        v = v
+        mvmax = np.max(v)
         plt.figure(figsize=(8, 7))
         plt.imshow(v.T, aspect='equal', cmap='seismic', interpolation='nearest',vmin=-mvmax, vmax=mvmax)
         plt.colorbar()
@@ -62,9 +61,9 @@ class backward_modeling:
         self.dz = kwargs['dz']
         self.nt = kwargs['nt']
         self.fs = kwargs['fs']
-        self.vs = kwargs['vs'] if 'vs' in kwargs else cp.ones((self.nx,self.nz), dtype =cp.float64)*200
-        self.vp = kwargs['vp'] if 'vp' in kwargs else self.vs*cp.sqrt(6) # at least root2 times larger than vs, poisson ratio = 0.25, vp/vs = 1.7320508, 
-        self.rho= kwargs['rho']if 'rho'in kwargs else cp.ones((self.nx,self.nz), dtype =cp.float64)*1800
+        self.vs = kwargs['vs'] if 'vs' in kwargs else np.ones((self.nx,self.nz), dtype =np.float64)*200
+        self.vp = kwargs['vp'] if 'vp' in kwargs else self.vs*np.sqrt(6) # at least root2 times larger than vs, poisson ratio = 0.25, vp/vs = 1.7320508, 
+        self.rho= kwargs['rho']if 'rho'in kwargs else np.ones((self.nx,self.nz), dtype =np.float64)*1800
         self.absorbing_frame = kwargs['absorbing_frame'] if 'absorbing_frame' in kwargs else 60
         self.src_loc = kwargs['src_loc']if 'src_loc'in kwargs else [self.nx // 2,0] #source location, (i,j)
         self.obsdata_u = kwargs['observed_data_u']if 'observed_data_u'in kwargs else None # for x axis wave
@@ -83,9 +82,9 @@ class backward_modeling:
         self.steepness_array = kwargs['steepness_array'] if 'steepness_array' in kwargs else None 
 
     def initialize(self):
-        self.synsrc_u = cp.zeros((len(self.src_loc), self.nt), dtype=cp.float64)
-        self.synsrc_v = cp.zeros((len(self.src_loc), self.nt), dtype=cp.float64)
-        self.synsrc_w = cp.zeros((len(self.src_loc), self.nt), dtype=cp.float64)
+        self.synsrc_u = np.zeros((len(self.src_loc), self.nt), dtype=np.float64)
+        self.synsrc_v = np.zeros((len(self.src_loc), self.nt), dtype=np.float64)
+        self.synsrc_w = np.zeros((len(self.src_loc), self.nt), dtype=np.float64)
 
         self.mu = self.rho*self.vs**2
         self.lam = ((self.vp/self.vs)**2 - 2)*self.mu
@@ -93,24 +92,24 @@ class backward_modeling:
 
         # stress
         # for p-sv wave propagation, sxx, sxz, szz
-        self.sxx = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        self.sxz = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        self.szz = cp.zeros((self.nx, self.nz), dtype=cp.float64)
+        self.sxx = np.zeros((self.nx, self.nz), dtype=np.float64)
+        self.sxz = np.zeros((self.nx, self.nz), dtype=np.float64)
+        self.szz = np.zeros((self.nx, self.nz), dtype=np.float64)
         # for sh wave propagation, syx, syz
-        self.syx = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        self.syz = cp.zeros((self.nx, self.nz), dtype=cp.float64)
+        self.syx = np.zeros((self.nx, self.nz), dtype=np.float64)
+        self.syz = np.zeros((self.nx, self.nz), dtype=np.float64)
 
         # velocity
         # u, v, w for each x,y,z,axis
-        self.u = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        self.v = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        self.w = cp.zeros((self.nx, self.nz), dtype=cp.float64)
+        self.u = np.zeros((self.nx, self.nz), dtype=np.float64)
+        self.v = np.zeros((self.nx, self.nz), dtype=np.float64)
+        self.w = np.zeros((self.nx, self.nz), dtype=np.float64)
 
         # shear modulus mu
         # mxx,mzz=self.mu for p-sv wave propagation
-        self.mxz = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        self.myx = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        self.myz = cp.zeros((self.nx, self.nz), dtype=cp.float64)
+        self.mxz = np.zeros((self.nx, self.nz), dtype=np.float64)
+        self.myx = np.zeros((self.nx, self.nz), dtype=np.float64)
+        self.myz = np.zeros((self.nx, self.nz), dtype=np.float64)
 
         self.myx, self.myz = self.shear_avg_SH()
         self.mxz = self.shear_avg_PSV()
@@ -136,9 +135,9 @@ class backward_modeling:
 
     def plot_wavefield(self):
         # 波動場の初期プロットを設定
-        u_cpu = np.asarray(self.u.get()).T
-        v_cpu = np.asarray(self.v.get()).T
-        w_cpu = np.asarray(self.w.get()).T
+        u_cpu = np.asarray(self.u).T
+        v_cpu = np.asarray(self.v).T
+        w_cpu = np.asarray(self.w).T
 
         # 図と軸の設定
         self.fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(21, 7))
@@ -169,18 +168,18 @@ class backward_modeling:
         """
         display wavefield
         parameters
-        u:cp.array, default= self.u
-        v:cp.array, default= self.v
-        w:cp.array, default= self.w
+        u:np.array, default= self.u
+        v:np.array, default= self.v
+        w:np.array, default= self.w
 
         you can choose the wavefield to display setting u_cpu, v_cpu, w_cpu
             
         """
         # 波動場データをCPUに転送して更新
         plt.suptitle(suptitle)
-        u_cpu = self.u.get() if u_cpu is None else u_cpu
-        v_cpu = self.v.get() if v_cpu is None else v_cpu
-        w_cpu = self.w.get() if w_cpu is None else w_cpu
+        u_cpu = self.u if u_cpu is None else u_cpu
+        v_cpu = self.v if v_cpu is None else v_cpu
+        w_cpu = self.w if w_cpu is None else w_cpu
 
         # イメージのデータを更新
         self.im_u.set_data(u_cpu.T)
@@ -188,9 +187,9 @@ class backward_modeling:
         self.im_w.set_data(w_cpu.T)
 
         # カラーバーの範囲を更新（必要に応じて）
-        u_max = cp.max(u_cpu) if cp.max(u_cpu) > -cp.min(u_cpu) else -cp.min(u_cpu)
-        v_max = cp.max(v_cpu) if cp.max(v_cpu) > -cp.min(v_cpu) else -cp.min(v_cpu)
-        w_max = cp.max(w_cpu) if cp.max(w_cpu) > -cp.min(w_cpu) else -cp.min(w_cpu)
+        u_max = np.max(u_cpu) if np.max(u_cpu) > -np.min(u_cpu) else -np.min(u_cpu)
+        v_max = np.max(v_cpu) if np.max(v_cpu) > -np.min(v_cpu) else -np.min(v_cpu)
+        w_max = np.max(w_cpu) if np.max(w_cpu) > -np.min(w_cpu) else -np.min(w_cpu)
         self.im_u.set_clim(-u_max, u_max)
         self.im_v.set_clim(-v_max, v_max)
         self.im_w.set_clim(-w_max, w_max)
@@ -314,8 +313,8 @@ class backward_modeling:
         self.sz[i_start:i_end, j_start:j_end] += self.dt * self.muz[i_start:i_end, j_start:j_end] * v_z
 
     def shear_avg_SH(self):
-        mux = cp.copy(self.mu)
-        muz = cp.copy(self.mu)
+        mux = np.copy(self.mu)
+        muz = np.copy(self.mu)
         # Use vectorized operations
         mu_i_j = self.mu[1:-1, 1:-1]
         mu_ip1_j = self.mu[2:, 1:-1]
@@ -325,7 +324,7 @@ class backward_modeling:
         return mux, muz
     
     def shear_avg_PSV(self):
-        muxz = cp.copy(self.mu)
+        muxz = np.copy(self.mu)
         mu_i_j = self.mu[1:-1, 1:-1]
         mu_ip1_j = self.mu[2:, 1:-1]
         mu_i_jp1 = self.mu[1:-1, 2:]
@@ -342,14 +341,14 @@ class backward_modeling:
             for j in range(1,self.nz-1):
                 self.rho_u[i,j] = 0.5*(self.rho[i,j] + self.rho[i+1,j])        
         """
-        rho_u = cp.copy(self.rho)
+        rho_u = np.copy(self.rho)
         rho_i_j = self.rho[1:-1, 1:-1]
         rho_ip1_j = self.rho[2:, 1:-1]
         rho_u[1:-1, 1:-1] = 0.5 * (rho_i_j + rho_ip1_j)
         return rho_u
 
     def rhow(self):
-        rho_w = cp.copy(self.rho)
+        rho_w = np.copy(self.rho)
         rho_i_j = self.rho[1:-1, 1:-1]  
         rho_i_jp1 = self.rho[1:-1, 2:]
         rho_w[1:-1, 1:-1] = 0.5 * (rho_i_j + rho_i_jp1)
@@ -368,14 +367,14 @@ class backward_modeling:
         nx = self.nx
         nz = self.nz
 
-        coeff = cp.zeros(FW)
+        coeff = np.zeros(FW)
 
         # define coefficients in absorbing frame
         for i in range(FW):
-            coeff[i] = cp.exp(-(a**2 * (FW-i)**2))
+            coeff[i] = np.exp(-(a**2 * (FW-i)**2))
 
         # initialize array of absorbing coefficients
-        absorb_coeff = cp.ones((nx,nz))
+        absorb_coeff = np.ones((nx,nz))
 
         # compute coefficients for left grid boundaries (x-direction)
         zb=0
@@ -444,9 +443,9 @@ class backward_modeling:
             self.update_str(order = self.order)
             for l, loc in enumerate(self.src_loc):
                 i, j = loc
-                self.synsrc_u[l, t] = self.u[i, j].get()  # Transfer data to CPU
-                self.synsrc_v[l, t] = self.v[i, j].get()  # Transfer data to CPU
-                self.synsrc_w[l, t] = self.w[i, j].get()  # Transfer data to CPU
+                self.synsrc_u[l, t] = self.u[i, j]  # Transfer data to CPU
+                self.synsrc_v[l, t] = self.v[i, j]  # Transfer data to CPU
+                self.synsrc_w[l, t] = self.w[i, j]  # Transfer data to CPU
 
             if it % self.isnap == 0 :
                 print(f'i={it}/{self.nt}')
@@ -455,27 +454,27 @@ class backward_modeling:
                     self.display_wavefield()
             
             # check if the wavefield is infinite: flag
-            if not cp.all(cp.isfinite(self.u)):
+            if not np.all(np.isfinite(self.u)):
                 return 4
-            if not cp.all(cp.isfinite(self.v)):
+            if not np.all(np.isfinite(self.v)):
                 return 5
-            if not cp.all(cp.isfinite(self.w)):
+            if not np.all(np.isfinite(self.w)):
                 return 6
 
         print('end backward modeling')
         return 0
     
-    def run_calc(self, import_fwdata_u:cp.array, import_fwdata_v:cp.array, import_fwdata_w:cp.array, isnaps:cp.array, show=True, method = 'closs_correlation', save = False):
+    def run_calc(self, import_fwdata_u:np.array, import_fwdata_v:np.array, import_fwdata_w:np.array, isnaps:np.array, show=True, method = 'closs_correlation', save = False):
         """
         run backward modeling and calcurate correlation with synthetic forward data
         parameters:
-            impout_fwdata_u:cp.array,
+            impout_fwdata_u:np.array,
                 forward modeling data u
-            impout_fwdata_v:cp.array,
+            impout_fwdata_v:np.array,
                 forward modeling data v
-            impout_fwdata_w:cp.array,
+            impout_fwdata_w:np.array,
                 forward modeling data w
-            isnaps:cp.array,
+            isnaps:np.array,
                 snapshot timesteps of forward modeling u,v,w
             method:str, default='closs_correlation',
                 closs_correlation' or 'convolution' only (20241002)
@@ -491,7 +490,7 @@ class backward_modeling:
             6: w faced infinite.
 
         if simulation was conducted safely,
-        result_u, result_v, result_w:cp.array
+        result_u, result_v, result_w:np.array
             correlation data of u,v,w with synthetic forward data  
         """
         # print('start backward modeling')
@@ -500,9 +499,9 @@ class backward_modeling:
             self.plot_wavefield()
         
         ## make reslt image:
-        result_u = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        result_v = cp.zeros((self.nx, self.nz), dtype=cp.float64)
-        result_w = cp.zeros((self.nx, self.nz), dtype=cp.float64)
+        result_u = np.zeros((self.nx, self.nz), dtype=np.float64)
+        result_v = np.zeros((self.nx, self.nz), dtype=np.float64)
+        result_w = np.zeros((self.nx, self.nz), dtype=np.float64)
 
         for it in range(self.nt):
             # free surface boundary condition Z=0
@@ -512,7 +511,7 @@ class backward_modeling:
 
             # add source term at the source location
             # Extract indices from src_loc
-            receiver_loc_array = cp.array(self.receiver_loc)
+            receiver_loc_array = np.array(self.receiver_loc)
             i_indices = receiver_loc_array[:, 0]
             j_indices = receiver_loc_array[:, 1]
 
@@ -527,7 +526,7 @@ class backward_modeling:
 
             self.update_str(order=self.order)
 
-            src_loc_array = cp.array(self.src_loc)
+            src_loc_array = np.array(self.src_loc)
             i_indices = src_loc_array[:, 0]
             j_indices = src_loc_array[:, 1]
 
@@ -537,7 +536,7 @@ class backward_modeling:
             
             snapt = t
             if snapt in isnaps:
-                indices = cp.where(isnaps == snapt)[0][0]
+                indices = np.where(isnaps == snapt)[0][0]
                 if method == 'closs_correlation':
                     delta_result_u = (import_fwdata_u[:, :, indices] * self.u[:, :]).squeeze()
                     delta_result_v = (import_fwdata_v[:, :, indices] * self.v[:, :]).squeeze()
@@ -558,16 +557,16 @@ class backward_modeling:
                     sm_v = import_fwdata_v[:, :, indices].squeeze() * self.v[:, :]
                     sm_w = import_fwdata_w[:, :, indices].squeeze() * self.w[:, :]
 
-                    self.display_wavefield(u_cpu = sm_u.get(), v_cpu = sm_v.get(), w_cpu = sm_w.get(), suptitle=f'fw x bw at {snapt}timestep')
-                    #self.display_wavefield(u_cpu=self.u.get(), v_cpu= self.v.get(), w_cpu=self.w.get(), suptitle=f'fw x bw at {snapt}timestep')
-                    # self.display_wavefield(u_cpu=delta_result_u.get(), v_cpu=delta_result_v.get(), w_cpu=delta_result_w.get(), suptitle=f'fw x bw at {snapt}timestep')
+                    self.display_wavefield(u_cpu = sm_u, v_cpu = sm_v, w_cpu = sm_w, suptitle=f'fw x bw at {snapt}timestep')
+                    #self.display_wavefield(u_cpu=self.u, v_cpu= self.v, w_cpu=self.w, suptitle=f'fw x bw at {snapt}timestep')
+                    # self.display_wavefield(u_cpu=delta_result_u, v_cpu=delta_result_v, w_cpu=delta_result_w, suptitle=f'fw x bw at {snapt}timestep')
 
             # check if the wavefield is infinite: flag
-            if not cp.all(cp.isfinite(self.u)):
+            if not np.all(np.isfinite(self.u)):
                 return 4
-            if not cp.all(cp.isfinite(self.v)):
+            if not np.all(np.isfinite(self.v)):
                 return 5
-            if not cp.all(cp.isfinite(self.w)):
+            if not np.all(np.isfinite(self.w)):
                 return 6
 
         print('end backward modeling')
@@ -579,8 +578,8 @@ class backward_modeling:
     def show_src(self):
 
         plt.figure(figsize=(8, 7))
-        plt.plot(self.synsrc_u.get()[0, :], label='u')
-        plt.plot(self.synsrc_v.get()[0, :], label='v')
-        plt.plot(self.synsrc_w.get()[0, :], label='w')
+        plt.plot(self.synsrc_u[0, :], label='u')
+        plt.plot(self.synsrc_v[0, :], label='v')
+        plt.plot(self.synsrc_w[0, :], label='w')
         plt.legend()
         plt.show()

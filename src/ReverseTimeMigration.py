@@ -79,7 +79,7 @@ class ReverseTimeMigration:
         self.v_fix = kwargs['v_fix'] if 'v_fix' in kwargs else None
         self.debug = kwargs['debug'] if 'debug' in kwargs else False
         self.receivers_height = kwargs['receivers_height'] if 'receivers_height' in kwargs else None 
-        recerivers_height = self.receivers_height  - cp.max(self.receivers_height) if self.receivers_height is not None else None
+        recerivers_height = self.receivers_height  - np.max(self.receivers_height) if self.receivers_height is not None else None
         self.receivers_height = recerivers_height # recerivers_height is negative value. 0 is the highest point
 
         self.check_parameters()
@@ -101,27 +101,27 @@ class ReverseTimeMigration:
                 raise ValueError('The size of the receiver height is not correct.')   
         pass
 
-    def estimate_velocity(self, array:cp.array, vmin, vmax, method='closs_corriation', vstep = 10):
+    def estimate_velocity(self, array:np.array, vmin, vmax, method='closs_corriation', vstep = 10):
         print('Estimate the velocity')
         M, L = array.shape
         r = (vmax/vmin)**(1/(vstep-1))
-        v_array = vmin*r**cp.arange(vstep)
+        v_array = vmin*r**np.arange(vstep)
         sum_max = 0
         v_estimated = vmin
         if method == 'closs_corriation':
             for v in v_array:
-                abs_d = cp.abs(self.receiver_loc - self.source_loc)
+                abs_d = np.abs(self.receiver_loc - self.source_loc)
                 tsteps = (self.fs * abs_d / v)# array(Num_sensor, dtype=np.float32)
-                tsteps = tsteps.astype(cp.int32)
-                tsteps -= cp.min(tsteps) # tstep offset of each sensor ch
-                L_t = L - cp.max(tsteps)
+                tsteps = tsteps.astype(np.int32)
+                tsteps -= np.min(tsteps) # tstep offset of each sensor ch
+                L_t = L - np.max(tsteps)
                 # インデックス配列を作成
-                indices = tsteps[:, None] + cp.arange(L_t)
+                indices = tsteps[:, None] + np.arange(L_t)
                 # シフトされた配列を取得
-                shifted = array[cp.arange(array.shape[0])[:, None], indices]
-                products = cp.prod(shifted, axis=0)
-                sum_v = cp.sum(products)
-                sum_v = cp.absolute(sum_v)
+                shifted = array[np.arange(array.shape[0])[:, None], indices]
+                products = np.prod(shifted, axis=0)
+                sum_v = np.sum(products)
+                sum_v = np.absolute(sum_v)
                 # find the maximum value
                 if sum_v > sum_max:
                     sum_max = sum_v
@@ -129,18 +129,18 @@ class ReverseTimeMigration:
                 continue
         else:
             raise ValueError('The method is not implemented.')
-        print(f'\nVelocity Estimation is finished.\nThe estimated velocity is {cp.round(v_estimated, 2)}m/s')
+        print(f'\nVelocity Estimation is finished.\nThe estimated velocity is {np.round(v_estimated, 2)}m/s')
         return v_estimated
     
     def __set_conditions_for_fwbw_modeling(self, estimated_v, CFL, absorbing_frame):
         dx = estimated_v / self.fs / CFL
         dz = dx
-        nx = int((cp.max(self.receiver_loc) - cp.min(self.receiver_loc)) / dx)
+        nx = int((np.max(self.receiver_loc) - np.min(self.receiver_loc)) / dx)
         nx += 4*absorbing_frame
         nz = nx
-        rho = self.rho * cp.ones((nx, nz), dtype=cp.float32)
-        vs = estimated_v * cp.ones((nx, nz), dtype=cp.float32)
-        vp = cp.sqrt((2 * self.poisson + 1) / (1 - 2 * self.poisson)) * vs
+        rho = self.rho * np.ones((nx, nz), dtype=np.float32)
+        vs = estimated_v * np.ones((nx, nz), dtype=np.float32)
+        vp = np.sqrt((2 * self.poisson + 1) / (1 - 2 * self.poisson)) * vs
         return dx, dz, nx, nz, rho, vs, vp
     
     def __set_isnap_for_allocated_memory(self, total_memory, memory_merge, nx, nz, nt):
@@ -153,7 +153,7 @@ class ReverseTimeMigration:
         if max_steps == 0:
             isnap = nt # if the memory is not enough, the isnap is set to nt
         else:
-            isnap = int(cp.ceil(nt / max_steps).item())
+            isnap = int(np.ceil(nt / max_steps).item())
         return isnap
 
     def run(self, total_memory = 24000, memory_merge = 2000, backwardmodel_method = 'closs_correlation'):
@@ -210,12 +210,12 @@ class ReverseTimeMigration:
             for loc in self.receiver_loc: 
                 receiver_loc_step.append([int(loc/dx+offset), 1])
             src_loc_step = [[int(self.source_loc/dx+offset), 1]]
-            surface_matrix = cp.ones((nx, nz), dtype=cp.float32)
-            height_array = cp.zeros((nx), dtype=cp.float32)
-            steepness_array = cp.zeros_like(height_array) # 0 steepness in the boundary
+            surface_matrix = np.ones((nx, nz), dtype=np.float32)
+            height_array = np.zeros((nx), dtype=np.float32)
+            steepness_array = np.zeros_like(height_array) # 0 steepness in the boundary
             if receivers_height is not None:
                 # get receiver_height_steps
-                receivers_height_step = -1 * cp.ones_like(receivers_height) * receivers_height / dz
+                receivers_height_step = -1 * np.ones_like(receivers_height) * receivers_height / dz
                 
                 for i,locstep in enumerate(receiver_loc_step):
                     heightstep = receivers_height_step[i]
@@ -400,13 +400,13 @@ class ReverseTimeMigration:
         vmap = self.image_v.get().T
         wmap = self.image_w.get().T
         if mean:
-            umap = umap - cp.mean(umap)
-            vmap = vmap - cp.mean(vmap)
-            wmap = wmap - cp.mean(wmap)
+            umap = umap - np.mean(umap)
+            vmap = vmap - np.mean(vmap)
+            wmap = wmap - np.mean(wmap)
         
-        umax = cp.max(umap) if cp.max(umap) > -cp.min(umap) else -cp.min(umap)
-        vmax = cp.max(vmap) if cp.max(vmap) > -cp.min(vmap) else -cp.min(vmap)
-        wmax = cp.max(wmap) if cp.max(wmap) > -cp.min(wmap) else -cp.min(wmap)
+        umax = np.max(umap) if np.max(umap) > -np.min(umap) else -np.min(umap)
+        vmax = np.max(vmap) if np.max(vmap) > -np.min(vmap) else -np.min(vmap)
+        wmax = np.max(wmap) if np.max(wmap) > -np.min(wmap) else -np.min(wmap)
 
         # 図とサブプロットを作成
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -441,7 +441,6 @@ class ReverseTimeMigration:
             plt.show()
 
 if __name__ == '__main__':
-
     hr = wa.Hr2c('example/seismogram_ex7.npz')
     time_to = 0.3
     hr.timepick('y', 0, time_to)
@@ -454,17 +453,17 @@ if __name__ == '__main__':
     plt.ion()
     plt.show()
     # 1. import observing data and source function
-    fs = cp.float32(hr.fs)
-    observed_u = cp.array(hr.x)
-    observed_v = cp.array(hr.y)
-    observed_w = cp.array(hr.z)
-    source_ch = cp.int32(hr.get_source_ch())
-    source_u = cp.array(hr.x[source_ch][0:int(hr.fs*0.02)])
-    source_v = cp.array(hr.y[source_ch][0:int(hr.fs*0.02)])
-    source_w = cp.array(hr.z[source_ch][0:int(hr.fs*0.02)])
+    fs = np.float32(hr.fs)
+    observed_u = np.array(hr.x)
+    observed_v = np.array(hr.y)
+    observed_w = np.array(hr.z)
+    source_ch = np.int32(hr.get_source_ch())
+    source_u = np.array(hr.x[source_ch][0:int(hr.fs*0.02)])
+    source_v = np.array(hr.y[source_ch][0:int(hr.fs*0.02)])
+    source_w = np.array(hr.z[source_ch][0:int(hr.fs*0.02)])
 
-    receiver_loc = cp.array(hr.distance)
-    source_loc = cp.array(hr.source_x)
+    receiver_loc = np.array(hr.distance)
+    source_loc = np.array(hr.source_x)
     absorbing_frame = 100
     isnap = 1
 
